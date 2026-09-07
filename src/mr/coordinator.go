@@ -12,8 +12,6 @@ import (
 
 type Coordinator struct {
 	mu          sync.Mutex
-	nMap        int
-	nReduce     int
 	Phase       string
 	MapTasks    []*Task
 	ReduceTasks []*Task
@@ -52,11 +50,10 @@ func (c *Coordinator) server(sockname string) {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	// Your code here.
-
-	return ret
+	return c.Phase == "done"
 }
 
 // create a Coordinator.
@@ -85,15 +82,12 @@ func MakeCoordinator(sockname string, files []string, nReduce int) *Coordinator 
 		}
 	}
 
-	c.nMap = len(files)
-	c.nReduce = nReduce
-
 	c.server(sockname)
 	return &c
 }
 
 // Helper func to handle timeouts and check if all tasks in a phase are finished
-func checkPhaseDone(tasks []*Task) bool {
+func verifyingTaskPhase(tasks []*Task) bool {
 	allDone := true
 	for i := range tasks {
 		if tasks[i].State == "in_progress" && time.Since(tasks[i].TimeStart) > 10*time.Second {
@@ -122,10 +116,10 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.Phase == "map" && checkPhaseDone(c.MapTasks) {
+	if c.Phase == "map" && verifyingTaskPhase(c.MapTasks) {
 		c.Phase = "reduce"
 	}
-	if c.Phase == "reduce" && checkPhaseDone(c.ReduceTasks) {
+	if c.Phase == "reduce" && verifyingTaskPhase(c.ReduceTasks) {
 		c.Phase = "done"
 	}
 	if c.Phase == "done" {
@@ -141,7 +135,7 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 				MapTask: &MapTask{
 					IDMapTask:     task.IDTask,
 					FileName:      task.FileName,
-					ReduceTaskNum: c.nReduce,
+					ReduceTaskNum: len(c.ReduceTasks),
 				},
 			}
 			return nil
@@ -155,7 +149,7 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 				TaskType: task.TaskType,
 				ReduceTask: &ReduceTask{
 					IDReduceTask: task.IDTask,
-					MapTaskNum:   c.nMap,
+					MapTaskNum:   len(c.MapTasks),
 				},
 			}
 			return nil
@@ -163,5 +157,28 @@ func (c *Coordinator) GetTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	}
 
 	*reply = GetTaskReply{TaskType: "wait"}
+	return nil
+}
+
+func (c *Coordinator) ReportTask(args *ReportTaskArgs, reply *ReportTaskReply) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if args.TaskType == "map" {
+		for i := range c.MapTasks {
+			if c.MapTasks[i].IDTask == args.IDTask {
+				c.MapTasks[i].State = "completed"
+				break
+			}
+		}
+	} else if args.TaskType == "reduce" {
+		for i := range c.ReduceTasks {
+			if c.ReduceTasks[i].IDTask == args.IDTask {
+				c.ReduceTasks[i].State = "completed"
+				break
+			}
+		}
+	}
+
 	return nil
 }
