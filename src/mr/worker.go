@@ -7,8 +7,17 @@ import (
 	"log"
 	"net/rpc"
 	"os"
+	"sort"
 	"time"
 )
+
+// for sorting by key.
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 // Map functions return a slice of KeyValue.
 type KeyValue struct {
@@ -56,9 +65,13 @@ func Worker(sockname string, mapf func(string, string) []KeyValue,
 			}
 
 		case "reduce":
+			if err := doReduceTask(reply.ReduceTask, reducef); err != nil {
+				fmt.Printf("Reduce task failed: %v\n", err)
+				continue
+			}
 
 			if _, ok := reportTask(reply.IDTask, "reduce"); !ok {
-				fmt.Printf("Recuce Task with ID: %v is fail", reply.TaskType)
+				fmt.Printf("Reduce Task with ID: %v is fail", reply.TaskType)
 				continue
 			}
 		default:
@@ -108,7 +121,7 @@ func doMapTask(task *MapTask, mapf func(string, string) []KeyValue) error {
 			return err
 		}
 		enc := json.NewEncoder(tmpFile)
-		
+
 		for _, kv := range buckets[i] {
 			if err := enc.Encode(&kv); err != nil {
 				tmpFile.Close()
@@ -124,8 +137,58 @@ func doMapTask(task *MapTask, mapf func(string, string) []KeyValue) error {
 			return err
 		}
 	}
-
 	return nil
+}
+
+func doReduceTask(task *ReduceTask, reducef func(string, []string) string) error {
+	var intermediate []KeyValue
+
+	for m := 0; m < task.MapTaskNum; m++ {
+		filename := fmt.Sprintf("mr-%v-%v", m, task.IDReduceTask)
+		file, err := os.Open(filename)
+		if err != nil {
+			continue
+		}
+
+		dec := json.NewDecoder(file)
+		for {
+			kv := KeyValue{}
+			if err := dec.Decode(&kv); err != nil {
+				break
+			}
+			intermediate = append(intermediate, kv)
+		}
+		file.Close()
+	}
+
+	sort.Sort(ByKey(intermediate))
+
+	oname := fmt.Sprintf("mr-out-%d", task.IDReduceTask)
+	tempFile, err := os.CreateTemp(".", "mr-out-tmp-*")
+	if err != nil {
+		return err
+	}
+
+	for i := 0; i < len(intermediate); {
+		j := i + 1
+		for j < len(intermediate) && intermediate[i].Key == intermediate[j].Key {
+			j++
+		}
+
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, intermediate[k].Value)
+		}
+
+		output := reducef(intermediate[i].Key, values)
+
+		fmt.Fprintf(tempFile, "%v %v\n", intermediate[i].Key, output)
+
+		i = j
+	}
+
+	tempFile.Close()
+	return os.Rename(tempFile.Name(), oname)
 }
 
 // example function to show how to make an RPC call to the coordinator.
