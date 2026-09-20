@@ -105,6 +105,7 @@ func doMapTask(task *MapTask, mapf func(string, string) []KeyValue) error {
 	content, err := os.ReadFile(task.FileName)
 	if err != nil {
 		fmt.Printf("File %s with Map Task ID: %v is fail to open", task.FileName, task.IDMapTask)
+		return err
 	}
 	kva := mapf(task.FileName, string(content))
 	buckets := make([][]KeyValue, task.ReduceTaskNum)
@@ -145,7 +146,7 @@ func doReduceTask(task *ReduceTask, reducef func(string, []string) string) error
 
 	for m := 0; m < task.MapTaskNum; m++ {
 		filename := fmt.Sprintf("mr-%v-%v", m, task.IDReduceTask)
-		file, err := os.Open(filename)
+		file, err := os.Open(filename) 
 		if err != nil {
 			continue
 		}
