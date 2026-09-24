@@ -45,6 +45,7 @@ func (kv *KVServer) Get(args *rpc.GetArgs, reply *rpc.GetReply) {
 	if v, f := kv.KVs[args.Key]; f {
 		reply.Value = v.Value
 		reply.Version = v.Version
+		reply.Err = rpc.OK
 		return
 	}
 	reply.Err = rpc.ErrNoKey
@@ -62,6 +63,7 @@ func (kv *KVServer) Put(args *rpc.PutArgs, reply *rpc.PutReply) {
 		if v.Version == args.Version {
 			v.Value = args.Value
 			v.Version++
+			reply.Err = rpc.OK
 		} else {
 			reply.Err = rpc.ErrVersion
 		}

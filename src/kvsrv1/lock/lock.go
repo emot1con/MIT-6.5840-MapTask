@@ -11,6 +11,8 @@ type Lock struct {
 	// MakeLock().
 	ck kvtest.IKVClerk
 	// You may add code here
+	LockName string
+	ClientID string
 }
 
 // The tester calls MakeLock() and passes in a k/v clerk; your code can
