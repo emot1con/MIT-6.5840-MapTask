@@ -1,12 +1,10 @@
 package lock
 
 import (
-	"math/rand/v2"
-	"strconv"
 	"time"
 
 	"6.5840/kvsrv1/rpc"
-	"6.5840/kvtest1"
+	kvtest "6.5840/kvtest1"
 )
 
 type Lock struct {
@@ -29,7 +27,7 @@ type Lock struct {
 func MakeLock(ck kvtest.IKVClerk, lockname string) *Lock {
 	lk := &Lock{ck: ck}
 	lk.LockName = lockname
-	lk.ClientID = strconv.FormatInt(rand.Int64(), 10)
+	lk.ClientID = kvtest.RandValue(8)
 	return lk
 }
 
@@ -37,9 +35,14 @@ func (lk *Lock) Acquire() {
 	// Your code here
 	for {
 		val, ver, rep := lk.ck.Get(lk.LockName)
-		if rep == rpc.OK && val == "" {
-			if rep := lk.ck.Put(lk.LockName, lk.ClientID, ver); rep == rpc.OK {
+		if rep == rpc.OK {
+			if val == lk.ClientID {
 				return
+			}
+			if val == "" {
+				if rep = lk.ck.Put(lk.LockName, lk.ClientID, ver); rep == rpc.OK {
+					return
+				}
 			}
 		}
 
@@ -59,4 +62,17 @@ func (lk *Lock) Release() {
 			return
 		}
 	}
+
+	// for {
+	// 	val, ver, rep := lk.ck.Get(lk.LockName)
+	// 	if rep == rpc.OK {
+	// 		if val == "" || val != lk.ClientID {
+	// 			return
+	// 		}
+	// 		if rep := lk.ck.Put(lk.LockName, "", ver); rep == rpc.OK || rep == rpc.ErrMaybe {
+	// 			return
+	// 		}
+	// 	}
+	// 	time.Sleep(100 * time.Millisecond)
+	// }
 }
